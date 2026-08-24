@@ -637,6 +637,12 @@ function locLabel(u){
   if(!u.prefecture) return "地域未設定";
   return u.prefecture + (u.city ? " ・ " + u.city : "");
 }
+async function fetchProfilesByIds(ids){
+  const uniqueIds = [...new Set(ids)].filter(Boolean);
+  if(!uniqueIds.length) return {};
+  const { data } = await sb.from("profiles_public").select("*").in("id", uniqueIds);
+  return Object.fromEntries((data||[]).map(p => [p.id, p]));
+}
 let blockedIdsCache = null;
 async function getExcludedIds(){
   if(isGuest) return [];
@@ -666,7 +672,7 @@ async function home(){
   const unreadBanner = unread > 0 ? `<div class="card" style="background:#eef2ff;cursor:pointer" onclick="showPage('messages')"><b>💬 新着メッセージが${unread}件あります</b><div class="muted">タップしてメッセージを確認</div></div>` : "";
   document.getElementById("main").innerHTML = `<div class="hero"><h1>異業種で、つながる。</h1><div class="muted">仕事・協業・情報交換。誰とつながるかは、あなたが決める。</div></div>${unreadBanner}<div class="card"><div class="row between"><b>新着会員</b><button onclick="showPage('discover')">もっと探す</button></div><div id="newMembers">読み込み中…</div></div>`;
   const excluded = await getExcludedIds();
-  let query = sb.from("profiles").select("*").order("created_at", { ascending: false }).limit(10 + excluded.length);
+  let query = sb.from("profiles_public").select("*").order("created_at", { ascending: false }).limit(10 + excluded.length);
   if(!isGuest) query = query.neq("id", currentUser.id);
   const { data: list, error } = await query;
   const el = document.getElementById("newMembers");
@@ -738,7 +744,7 @@ async function discover(){
 }
 async function runDiscoverSearch(){
   const excluded = await getExcludedIds();
-  let query = sb.from("profiles").select("*");
+  let query = sb.from("profiles_public").select("*");
   if(!isGuest) query = query.neq("id", currentUser.id);
   if(excluded.length) query = query.not("id", "in", `(${excluded.join(",")})`);
   if(discoverState.industry) query = query.ilike("type", `%${discoverState.industry}%`);
@@ -871,18 +877,21 @@ async function openCommunity(communityId){
   <div class="card"><b>メンバー</b><div id="communityMembers" style="margin-top:8px">読み込み中…</div></div>`;
 
   if(c.owner_id === currentUser.id && c.join_type === "approval"){
-    const { data: pending } = await sb.from("community_members").select("user_id, profiles(name, avatar_url)").eq("community_id", c.id).eq("status", "pending");
+    const { data: pending } = await sb.from("community_members").select("user_id").eq("community_id", c.id).eq("status", "pending");
+    const pendingProfiles = await fetchProfilesByIds((pending||[]).map(p => p.user_id));
     const ownerEl = document.getElementById("communityOwnerTools");
     if(pending && pending.length){
-      ownerEl.innerHTML = `<div class="notice" style="background:#fef3c7;color:#92400e"><b>承認待ちの申請：${pending.length}件</b>${pending.map(p => `<div class="row between" style="margin-top:6px"><span>${esc(p.profiles?.name)||"unknown"}</span><div class="row"><button onclick="approveMember('${c.id}','${p.user_id}')">承認</button><button onclick="rejectMember('${c.id}','${p.user_id}')">却下</button></div></div>`).join("")}</div>`;
+      ownerEl.innerHTML = `<div class="notice" style="background:#fef3c7;color:#92400e"><b>承認待ちの申請：${pending.length}件</b>${pending.map(p => `<div class="row between" style="margin-top:6px"><span>${esc(pendingProfiles[p.user_id]?.name)||"unknown"}</span><div class="row"><button onclick="approveMember('${c.id}','${p.user_id}')">承認</button><button onclick="rejectMember('${c.id}','${p.user_id}')">却下</button></div></div>`).join("")}</div>`;
     }
   }
 
-  const { data: posts } = await sb.from("community_posts").select("*, profiles(name, avatar_url)").eq("community_id", c.id).order("created_at", { ascending: false });
-  document.getElementById("communityPosts").innerHTML = (posts && posts.length) ? posts.map(p => `<div class="post"><div class="row">${avatarHTML(p.profiles||{}, 32)}<b>${esc(p.profiles?.name)||"unknown"}</b><span class="small muted">${new Date(p.created_at).toLocaleString("ja-JP")}</span></div><h3>${esc(p.title)}</h3><p>${esc(p.body)}</p></div>`).join("") : `<p class="muted">まだ投稿がありません。</p>`;
+  const { data: posts } = await sb.from("community_posts").select("*").eq("community_id", c.id).order("created_at", { ascending: false });
+  const postAuthors = await fetchProfilesByIds((posts||[]).map(p => p.user_id));
+  document.getElementById("communityPosts").innerHTML = (posts && posts.length) ? posts.map(p => `<div class="post"><div class="row">${avatarHTML(postAuthors[p.user_id]||{}, 32)}<b>${esc(postAuthors[p.user_id]?.name)||"unknown"}</b><span class="small muted">${new Date(p.created_at).toLocaleString("ja-JP")}</span></div><h3>${esc(p.title)}</h3><p>${esc(p.body)}</p></div>`).join("") : `<p class="muted">まだ投稿がありません。</p>`;
 
-  const { data: members } = await sb.from("community_members").select("user_id, profiles(name, avatar_url)").eq("community_id", c.id).eq("status", "member");
-  document.getElementById("communityMembers").innerHTML = (members && members.length) ? members.map(m => `<div class="row" style="margin:4px 0">${avatarHTML(m.profiles||{}, 28)}<span>${esc(m.profiles?.name)||"unknown"}</span>${m.user_id === c.owner_id ? '<span class="pill">管理人</span>' : ''}</div>`).join("") : `<p class="muted">メンバーがいません。</p>`;
+  const { data: members } = await sb.from("community_members").select("user_id").eq("community_id", c.id).eq("status", "member");
+  const memberProfiles = await fetchProfilesByIds((members||[]).map(m => m.user_id));
+  document.getElementById("communityMembers").innerHTML = (members && members.length) ? members.map(m => `<div class="row" style="margin:4px 0">${avatarHTML(memberProfiles[m.user_id]||{}, 28)}<span>${esc(memberProfiles[m.user_id]?.name)||"unknown"}</span>${m.user_id === c.owner_id ? '<span class="pill">管理人</span>' : ''}</div>`).join("") : `<p class="muted">メンバーがいません。</p>`;
 }
 async function postToCommunity(communityId){
   const title = document.getElementById("cpTitle").value.trim();
@@ -919,15 +928,20 @@ async function messagePage(){
   if(isGuest){ document.getElementById("main").innerHTML = `<div class="card"><h2>メッセージ</h2><p class="muted">メッセージ機能を使うにはログイン（会員登録）が必要です。</p><button class="primary" onclick="promptLogin()">ログイン／登録する</button></div>`; return; }
   document.getElementById("main").innerHTML = `<div id="msgList" class="card">読み込み中…</div>`;
   const { data: msgs, error } = await sb.from("messages")
-    .select("*, sender:profiles!messages_from_user_fkey(name,avatar_url,is_verified), receiver:profiles!messages_to_user_fkey(name,avatar_url,is_verified)")
+    .select("*")
     .or(`from_user.eq.${currentUser.id},to_user.eq.${currentUser.id}`)
     .order("created_at", { ascending: true });
   const el = document.getElementById("msgList");
   if(error){ el.innerHTML = `<p class="muted">読み込みに失敗しました。</p>`; return; }
+  const otherIds = [...new Set((msgs||[]).map(m => m.from_user === currentUser.id ? m.to_user : m.from_user))];
+  const { data: otherProfiles } = otherIds.length
+    ? await sb.from("profiles_public").select("id,name,avatar_url,is_verified").in("id", otherIds)
+    : { data: [] };
+  const profileById = Object.fromEntries((otherProfiles||[]).map(p => [p.id, p]));
   const partners = {};
   msgs.forEach(m => {
     const otherId = m.from_user === currentUser.id ? m.to_user : m.from_user;
-    const other = m.from_user === currentUser.id ? m.receiver : m.sender;
+    const other = profileById[otherId];
     if(!partners[otherId]) partners[otherId] = { name: other?.name, avatar_url: other?.avatar_url, is_verified: other?.is_verified, messages: [], lastAt: m.created_at, lastBody: "", lastMine: false, unread: 0 };
     partners[otherId].messages.push(m);
     partners[otherId].lastAt = m.created_at;
@@ -973,7 +987,7 @@ async function messagePage(){
 }
 async function openChatThread(otherId){
   currentChatPeerId = otherId;
-  const { data: prof } = await sb.from("profiles").select("name,avatar_url,is_verified").eq("id", otherId).single();
+  const { data: prof } = await sb.from("profiles_public").select("name,avatar_url,is_verified").eq("id", otherId).single();
   document.getElementById("main").innerHTML = `<div class="card" style="padding:0;overflow:hidden">
     <div class="chatHeader">
       <button onclick="messagePage()" style="background:none;color:white;padding:4px">← 戻る</button>
@@ -1092,7 +1106,7 @@ async function notificationPage(){
 
 /* ---------- My page ---------- */
 async function loadReferredList(){
-  const { data, error } = await sb.from("profiles").select("id,name,avatar_url,created_at").eq("referred_by", currentUser.id).order("created_at", { ascending: false });
+  const { data, error } = await sb.from("profiles_public").select("id,name,avatar_url,created_at").eq("referred_by", currentUser.id).order("created_at", { ascending: false });
   const el = document.getElementById("referredList");
   if(!el) return;
   if(error){ el.innerHTML = `<p class="muted">読み込みに失敗しました。</p>`; return; }
@@ -1227,11 +1241,16 @@ async function mePage(){
     mePage();
   };
   setupNotifyToggle();
-  const { data: blocked, error } = await sb.from("blocks").select("blocked_id, profiles!blocks_blocked_id_fkey(id,name,type,prefecture,city)").eq("blocker_id", currentUser.id);
+  const { data: blocked, error } = await sb.from("blocks").select("blocked_id").eq("blocker_id", currentUser.id);
   const el = document.getElementById("blockedList");
   if(error){ el.innerHTML = `<p class="muted">読み込みに失敗しました。</p>`; return; }
+  const blockedIds = (blocked||[]).map(b => b.blocked_id);
+  const { data: blockedProfiles } = blockedIds.length
+    ? await sb.from("profiles_public").select("id,name,type,prefecture,city").in("id", blockedIds)
+    : { data: [] };
+  const blockedProfileById = Object.fromEntries((blockedProfiles||[]).map(p => [p.id, p]));
   el.innerHTML = (blocked && blocked.length) ? blocked.map(b => {
-    const p = b.profiles;
+    const p = blockedProfileById[b.blocked_id];
     return `<div class="post"><div class="row between"><div><b>${esc(p?.name)||"(未設定)"}</b><div class="muted">${esc(locLabel(p||{}))} ・ ${esc(p?.type)}</div></div><button onclick="unblockUser('${b.blocked_id}')">ブロック解除</button></div></div>`;
   }).join("") : `<p class="muted">ブロック中のユーザーはいません。</p>`;
   refreshSidebar();
@@ -1461,14 +1480,14 @@ async function openModal(type, data){
     html = `<h2>会員プラン</h2><div class="card"><h3>最初の30日間：無料</h3><p>登録後30日間、基本機能を無料で利用できます。</p></div><div class="card"><h3>月額会員：1,980円</h3><p>検索、プロフィール、メッセージ等を継続利用。</p>${subscribed ? `${statusHtml}<button onclick="openStripePortal()">お支払い情報・解約の管理</button>` : `${trialNotice}<button class="primary" id="subscribeBtn" onclick="startCheckout()">有料会員に登録する</button>`}</div><div id="subscribeErr" class="err"></div>`;
   }
   if(type==="message"){
-    const { data: prof } = await sb.from("profiles").select("name").eq("id", data).single();
+    const { data: prof } = await sb.from("profiles_public").select("name").eq("id", data).single();
     const { data: msgs } = await sb.from("messages").select("*")
       .or(`and(from_user.eq.${currentUser.id},to_user.eq.${data}),and(from_user.eq.${data},to_user.eq.${currentUser.id})`)
       .order("created_at", { ascending: true });
     html = `<h2>${esc(prof?.name)||"unknown"}さんに連絡</h2><div style="max-height:300px;overflow:auto">${(msgs||[]).map(m=>`<div class="card" style="margin:6px 0;background:${m.from_user===currentUser.id?'#eef2ff':'#f3f4f6'}"><div class="small">${m.from_user===currentUser.id?'自分':esc(prof?.name)}</div>${esc(m.body)}</div>`).join("")}</div><textarea id="mt" class="input" rows="4" placeholder="メッセージを入力"></textarea><div class="row" style="justify-content:flex-end"><button onclick="closeModal()">閉じる</button><button class="primary" onclick="sendMessage('${data}')">送信</button></div>`;
   }
   if(type==="profile"){
-    const { data: u } = await sb.from("profiles").select("*").eq("id", data).single();
+    const { data: u } = await sb.from("profiles_public").select("*").eq("id", data).single();
     html = `<div class="row">${avatarHTML(u, 64)}<div><h2 style="margin:0">${esc(u.name)||"(未設定)"}${u.is_verified ? ` <span class="pill" style="background:#dcfce7;color:#166534">✓認証済み</span>` : ""}${u.accepts_offers ? ` <span class="pill" style="background:#fef3c7;color:#92400e">📢 ご案内OK</span>` : ""}</h2></div></div><p class="muted">${esc(locLabel(u))} ・ ${esc(u.type)}</p><p>${esc(u.bio)}</p><b>できること</b><p>${esc(u.can_do)}</p><b>探していること</b><p>${esc(u.want)}</p><div class="row"><button class="primary" onclick="openMessage('${u.id}')">メッセージ</button><button onclick="${isGuest?'promptLogin()':`blockUser('${u.id}','${esc(u.name)||"このユーザー"}')`}">🚫 ブロック</button><button onclick="closeModal()">閉じる</button></div>`;
   }
   if(type==="edit"){
@@ -1737,7 +1756,7 @@ function requestCall(peerId, peerName){
 async function startCall(peerId, peerName){
   if(pc){ alert("すでに通話中です。"); return; }
   if(!navigator.mediaDevices?.getUserMedia){ alert("お使いのブラウザは通話機能に対応していません。"); return; }
-  const { data: peerProfile } = await sb.from("profiles").select("calls_enabled").eq("id", peerId).single();
+  const { data: peerProfile } = await sb.from("profiles_public").select("calls_enabled").eq("id", peerId).single();
   if(peerProfile && peerProfile.calls_enabled === false){ alert(`${peerName}さんは通話機能をオフにしています。`); return; }
   currentCallPeerId = peerId;
   currentCallPeerName = peerName;
