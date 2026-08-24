@@ -931,7 +931,7 @@ async function messagePage(){
     if(!partners[otherId]) partners[otherId] = { name: other?.name, avatar_url: other?.avatar_url, is_verified: other?.is_verified, messages: [], lastAt: m.created_at, lastBody: "", lastMine: false, unread: 0 };
     partners[otherId].messages.push(m);
     partners[otherId].lastAt = m.created_at;
-    partners[otherId].lastBody = m.body;
+    partners[otherId].lastBody = m.image_url ? "📷 写真" : m.body;
     partners[otherId].lastMine = m.from_user === currentUser.id;
     if(m.to_user === currentUser.id && !m.read) partners[otherId].unread++;
   });
@@ -997,9 +997,13 @@ async function renderChatMessages(otherId){
     const mine = m.from_user === currentUser.id;
     const time = new Date(m.created_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
     const readLabel = mine && m.read ? `<div class="bubbleMeta">既読</div>` : "";
+    const bubbleContent = m.image_url
+      ? `<img src="${esc(m.image_url)}" alt="送信された写真" style="max-width:100%;border-radius:12px;display:block;cursor:pointer" onclick="openImageViewer('${esc(m.image_url)}')">`
+      : esc(m.body);
+    const bubblePad = m.image_url ? "padding:4px" : "";
     return `<div class="bubbleRow ${mine ? "mine" : "theirs"}">
       ${mine ? `<div style="display:flex;flex-direction:column;align-items:flex-end">${readLabel}<div class="bubbleMeta">${time}</div></div>` : ""}
-      <div class="bubble ${mine ? "mine" : "theirs"}">${esc(m.body)}</div>
+      <div class="bubble ${mine ? "mine" : "theirs"}" style="${bubblePad}">${bubbleContent}</div>
       ${!mine ? `<div class="bubbleMeta">${time}</div>` : ""}
     </div>`;
   }).join("") : `<p class="muted">まだメッセージはありません。最初のメッセージを送ってみましょう。</p>`;
@@ -1022,6 +1026,8 @@ function renderChatInputBar(otherId){
     return;
   }
   area.innerHTML = `<div class="chatInputBar">
+    <input type="file" accept="image/*" id="chatImageInput" class="hidden" onchange="sendChatImage('${otherId}', this.files[0])">
+    <button class="iconbtn" onclick="document.getElementById('chatImageInput').click()">📷</button>
     <input id="chatInput" placeholder="メッセージを入力" onkeydown="if(event.key==='Enter'){sendChatMessage('${otherId}')}">
     <button class="primary" style="border-radius:20px" onclick="sendChatMessage('${otherId}')">送信</button>
   </div>`;
@@ -1037,6 +1043,29 @@ async function sendChatMessage(otherId){
   if(error){ alert("メッセージを送信できませんでした。相手をブロックしているか、相手にブロックされている可能性があります。"); return; }
   await sb.from("notifications").insert({ user_id: otherId, body: `${myProfile.name||"誰か"}さんからメッセージが届きました` });
   await renderChatMessages(otherId);
+}
+async function sendChatImage(otherId, file){
+  if(isGuest) return promptLogin();
+  if(!canSendMessages()) return promptSubscribe();
+  if(!file) return;
+  const fileInput = document.getElementById("chatImageInput");
+  const camBtn = fileInput?.previousElementSibling;
+  try{
+    if(camBtn) camBtn.textContent = "…";
+    const compressed = await compressImage(file, 400*1024);
+    if(!compressed){ alert("画像の処理に失敗しました。別の画像でお試しください。"); return; }
+    const path = `${currentUser.id}/${otherId}/${Date.now()}.jpg`;
+    const { error: upErr } = await sb.storage.from("chat-images").upload(path, compressed, { contentType: "image/jpeg" });
+    if(upErr){ alert("画像のアップロードに失敗しました。"); return; }
+    const { data: pub } = sb.storage.from("chat-images").getPublicUrl(path);
+    const { error } = await sb.from("messages").insert({ from_user: currentUser.id, to_user: otherId, body: "", image_url: pub.publicUrl });
+    if(error){ alert("画像を送信できませんでした。相手をブロックしているか、相手にブロックされている可能性があります。"); return; }
+    await sb.from("notifications").insert({ user_id: otherId, body: `${myProfile.name||"誰か"}さんから写真が届きました` });
+    await renderChatMessages(otherId);
+  } finally {
+    if(fileInput) fileInput.value = "";
+    if(camBtn) camBtn.textContent = "📷";
+  }
 }
 async function openMessage(otherId){ if(isGuest) return promptLogin(); showPage("messages"); setTimeout(() => openChatThread(otherId), 50); }
 async function sendMessage(otherId){
@@ -1604,6 +1633,10 @@ function setupAnswerSlide(){
   };
 }
 function closeModal(){ document.getElementById("modal").classList.remove("open"); }
+function openImageViewer(url){
+  document.getElementById("modalbox").innerHTML = `<div style="text-align:center"><img src="${url}" style="max-width:100%;max-height:75vh;border-radius:8px"><div class="row" style="justify-content:center;margin-top:12px"><button onclick="closeModal()">閉じる</button></div></div>`;
+  document.getElementById("modal").classList.add("open");
+}
 function openProfile(id){ openModal("profile", id); }
 
 /* ---------- Realtime ---------- */
