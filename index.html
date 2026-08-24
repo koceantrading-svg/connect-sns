@@ -773,7 +773,7 @@ function discoverCardHTML(u){
   return `<div class="listrow" onclick="openProfile('${u.id}')" style="cursor:pointer">
     ${avatarHTML(u, 56)}
     <div style="flex:1;min-width:0">
-      <b>${esc(u.name)||"(未設定)"}</b>${u.is_verified ? `<span class="pill" style="background:#dcfce7;color:#166534">✓認証済み</span>` : ""}
+      <b>${esc(u.name)||"(未設定)"}</b>${u.is_verified ? `<span class="pill" style="background:#dcfce7;color:#166534">✓認証済み</span>` : ""}${u.accepts_offers ? `<span class="pill" style="background:#fef3c7;color:#92400e">📢 ご案内OK</span>` : ""}
       <div class="muted">${esc(breadcrumb)}</div>
       <div><span class="pill" style="max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:bottom">できる：${esc(truncateText(u.can_do, 20))}</span><span class="pill" style="max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:bottom">探す：${esc(truncateText(u.want, 20))}</span></div>
       <div class="row" style="margin-top:6px;flex-wrap:nowrap" onclick="event.stopPropagation()">
@@ -1220,6 +1220,7 @@ async function saveProfile(){
     can_do: document.getElementById("ec").value,
     want: document.getElementById("ew").value,
     bio: document.getElementById("eb").value,
+    accepts_offers: document.getElementById("eAcceptsOffers").checked,
   };
   await sb.from("profiles").update(updates).eq("id", currentUser.id);
   Object.assign(myProfile, updates);
@@ -1439,7 +1440,7 @@ async function openModal(type, data){
   }
   if(type==="profile"){
     const { data: u } = await sb.from("profiles").select("*").eq("id", data).single();
-    html = `<div class="row">${avatarHTML(u, 64)}<div><h2 style="margin:0">${esc(u.name)||"(未設定)"}${u.is_verified ? ` <span class="pill" style="background:#dcfce7;color:#166534">✓認証済み</span>` : ""}</h2></div></div><p class="muted">${esc(locLabel(u))} ・ ${esc(u.type)}</p><p>${esc(u.bio)}</p><b>できること</b><p>${esc(u.can_do)}</p><b>探していること</b><p>${esc(u.want)}</p><div class="row"><button class="primary" onclick="openMessage('${u.id}')">メッセージ</button><button onclick="${isGuest?'promptLogin()':`blockUser('${u.id}','${esc(u.name)||"このユーザー"}')`}">🚫 ブロック</button><button onclick="closeModal()">閉じる</button></div>`;
+    html = `<div class="row">${avatarHTML(u, 64)}<div><h2 style="margin:0">${esc(u.name)||"(未設定)"}${u.is_verified ? ` <span class="pill" style="background:#dcfce7;color:#166534">✓認証済み</span>` : ""}${u.accepts_offers ? ` <span class="pill" style="background:#fef3c7;color:#92400e">📢 ご案内OK</span>` : ""}</h2></div></div><p class="muted">${esc(locLabel(u))} ・ ${esc(u.type)}</p><p>${esc(u.bio)}</p><b>できること</b><p>${esc(u.can_do)}</p><b>探していること</b><p>${esc(u.want)}</p><div class="row"><button class="primary" onclick="openMessage('${u.id}')">メッセージ</button><button onclick="${isGuest?'promptLogin()':`blockUser('${u.id}','${esc(u.name)||"このユーザー"}')`}">🚫 ブロック</button><button onclick="closeModal()">閉じる</button></div>`;
   }
   if(type==="edit"){
     const u = myProfile;
@@ -1458,6 +1459,10 @@ async function openModal(type, data){
     <input id="ec" class="input" value="${esc(u.can_do)}" placeholder="できること（30文字程度でシンプルに）" maxlength="40">
     <input id="ew" class="input" value="${esc(u.want)}" placeholder="探していること（30文字程度でシンプルに）" maxlength="40">
     <textarea id="eb" class="input" rows="4">${esc(u.bio)}</textarea>
+    <label class="row" style="align-items:flex-start;gap:8px;margin-top:10px;padding:10px;background:#f9fafb;border-radius:10px">
+      <input type="checkbox" id="eAcceptsOffers" ${u.accepts_offers ? "checked" : ""} style="margin-top:3px">
+      <span class="small">地元の事業者からのご案内を受け取る<br><span class="muted">オンにすると、地域の事業者さんからお得な情報・お誘いが届くことがあります。いつでもオフに戻せます。</span></span>
+    </label>
     <div class="row" style="justify-content:flex-end"><button onclick="closeModal()">キャンセル</button><button class="primary" onclick="saveProfile()">保存</button></div>`;
   }
   b.innerHTML = html;
@@ -1902,4 +1907,79 @@ function setCallVolume(v){
 function attachRemoteStream(stream){
   const audioEl = document.getElementById("remoteAudio");
   audioEl.srcObject = stream;
-  audioEl.mut
+  audioEl.muted = false;
+  const playPromise = audioEl.play();
+  if(playPromise && playPromise.catch){
+    playPromise.catch(() => {
+      // 自動再生がブロックされた場合、通話中バーのタップで再生を試みられるようにする
+      showToast("音声を再生するには画面をタップしてください");
+    });
+  }
+}
+function retryRemoteAudioPlayback(){
+  const audioEl = document.getElementById("remoteAudio");
+  if(audioEl.srcObject) audioEl.play().catch(() => {});
+}
+function showActiveCallUI(peerName, status){
+  document.getElementById("activeCallName").textContent = peerName;
+  document.getElementById("activeCallStatus").textContent = status;
+  document.getElementById("activeCallBar").classList.remove("hidden");
+}
+
+function setupRealtime(){
+  if(realtimeChannel) return;
+  realtimeChannel = sb.channel("connect-realtime")
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+      const m = payload.new;
+      if(m.from_user !== currentUser.id && m.to_user !== currentUser.id) return;
+      const activePage = document.querySelector('#tabbar .active')?.dataset.page;
+      if(activePage === "messages"){
+        if(currentChatPeerId && (currentChatPeerId === m.from_user || currentChatPeerId === m.to_user)){
+          renderChatMessages(currentChatPeerId);
+        } else {
+          messagePage();
+        }
+      }
+      if(activePage === "home" && m.to_user === currentUser.id) home();
+      refreshMessageBadge();
+      if(m.to_user === currentUser.id && isSoundEnabled()) playNotifySound();
+    })
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${currentUser.id}` }, (payload) => {
+      const activePage = document.querySelector('#tabbar .active')?.dataset.page;
+      if(activePage === "notifications") notificationPage();
+      showToast("新しい通知が届きました");
+      if(isBrowserNotifyEnabled()){
+        try{ new Notification("CONNECT", { body: payload.new.body || "新しい通知があります" }); }catch(e){}
+      }
+    })
+    .subscribe();
+}
+function showToast(text){
+  let t = document.createElement("div");
+  t.textContent = text;
+  t.style.cssText = "position:fixed;bottom:20px;right:20px;background:#111827;color:white;padding:12px 18px;border-radius:10px;z-index:50;box-shadow:0 4px 12px #0004";
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 3500);
+}
+
+/* ---------- Boot ---------- */
+sb.auth.onAuthStateChange((event) => {
+  if(event === "SIGNED_IN") init();
+  if(event === "PASSWORD_RECOVERY"){
+    document.getElementById("authScreen").classList.add("hidden");
+    document.getElementById("resetScreen").classList.remove("hidden");
+  }
+});
+document.getElementById("resetSubmit").onclick = async () => {
+  const errBox = document.getElementById("resetErr");
+  const newPassword = document.getElementById("resetPassword").value;
+  if(!newPassword || newPassword.length < 6){ errBox.textContent = "6文字以上のパスワードを入力してください"; return; }
+  const { error } = await sb.auth.updateUser({ password: newPassword });
+  if(error){ errBox.textContent = error.message; return; }
+  errBox.style.color = "#065f46";
+  errBox.textContent = "パスワードを更新しました。まもなくログインします…";
+  setTimeout(() => location.reload(), 1500);
+};
+init();
+</script>
+</body></html>
