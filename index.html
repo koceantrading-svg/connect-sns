@@ -65,6 +65,8 @@ button.small{padding:7px 12px;font-size:13px;flex-shrink:0}
       <a href="#" onclick="showLegalModal('terms');return false;" style="color:#6b7280">利用規約</a>
       ・
       <a href="#" onclick="showLegalModal('privacy');return false;" style="color:#6b7280">プライバシーポリシー</a>
+      ・
+      <a href="#" onclick="showLegalModal('tokushoho');return false;" style="color:#6b7280">特定商取引法に基づく表記</a>
     </p>
   </div>
 </div>
@@ -124,6 +126,22 @@ const LEGAL_TEXT = {
       <p><b>3. 第三者提供</b><br>法令に基づく場合を除き、本人の同意なく個人情報を第三者に提供することはありません。</p>
       <p><b>4. 外部サービスの利用</b><br>データベース・認証にSupabase、メール送信にResend、通知にLINE Messaging APIを利用しています。これらのサービス上でデータが処理されます。</p>
       <p><b>5. 情報の開示・削除</b><br>利用者は自己の個人情報の開示・訂正・削除を求めることができます。</p>
+      <p class="small muted">※本文はMVP（試作版）向けの簡易的な内容です。正式公開前に専門家による確認をお願いします。</p>
+    `
+  },
+  tokushoho: {
+    title: "特定商取引法に基づく表記",
+    body: `
+      <p><b>販売業者（運営者）</b><br>小岩 敬</p>
+      <p><b>運営統括責任者</b><br>小岩 敬</p>
+      <p><b>所在地・電話番号</b><br>請求があった場合、遅滞なく電子メールにて開示いたします。</p>
+      <p><b>メールアドレス</b><br>connect.support.jp@gmail.com</p>
+      <p><b>販売価格</b><br>月額会員プラン：1,980円（税込）<br>登録から30日間は無料でご利用いただけます。</p>
+      <p><b>商品代金以外の必要料金</b><br>インターネット接続にかかる通信費用はお客様のご負担となります。</p>
+      <p><b>お支払い方法</b><br>クレジットカード決済（Stripe）</p>
+      <p><b>お支払い時期</b><br>無料期間終了時、および以降は毎月同日に自動更新・決済されます。</p>
+      <p><b>サービス提供時期</b><br>お申込み手続き完了後、直ちにご利用いただけます。</p>
+      <p><b>返品・キャンセルについて</b><br>本サービスの性質上、お支払い済み料金の返金は行っておりません。解約はマイページよりいつでも手続き可能で、手続き後は次回更新日以降の課金が停止します（日割り返金はありません）。</p>
       <p class="small muted">※本文はMVP（試作版）向けの簡易的な内容です。正式公開前に専門家による確認をお願いします。</p>
     `
   }
@@ -1271,6 +1289,8 @@ async function mePage(){
     <a href="#" onclick="showLegalModal('terms');return false;" style="color:#6b7280">利用規約</a>
     ・
     <a href="#" onclick="showLegalModal('privacy');return false;" style="color:#6b7280">プライバシーポリシー</a>
+      ・
+      <a href="#" onclick="showLegalModal('tokushoho');return false;" style="color:#6b7280">特定商取引法に基づく表記</a>
   </p>`;
   setupSoundToggle();
   renderLineLinkArea();
