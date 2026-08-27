@@ -795,6 +795,7 @@ function discoverCardHTML(u){
 /* ---------- Communities ---------- */
 let communitiesState = { keyword: "" };
 async function communitiesPage(){
+  currentCommunityId = null;
   if(isGuest){ document.getElementById("main").innerHTML = `<div class="card"><h2>コミュニティ</h2><p class="muted">コミュニティ機能を使うにはログイン（会員登録）が必要です。</p><button class="primary" onclick="promptLogin()">ログイン／登録する</button></div>`; return; }
   document.getElementById("main").innerHTML = `
     <div class="card">
@@ -860,6 +861,7 @@ async function createCommunitySubmit(){
 async function openCommunity(communityId){
   const { data: c } = await sb.from("communities").select("*").eq("id", communityId).single();
   if(!c){ return; }
+  currentCommunityId = communityId;
   document.getElementById("main").innerHTML = `<div class="card">
     <button onclick="showPage('communities')">← コミュニティ一覧</button>
     <div class="row" style="margin-top:10px"><div class="avatar" style="width:56px;height:56px">${esc((c.name||"?")[0])}</div><div><h2 style="margin:0">${esc(c.name)}</h2><div class="muted">${c.join_type === "open" ? "誰でも参加OK" : "承認制"}</div></div></div>
@@ -868,12 +870,15 @@ async function openCommunity(communityId){
     <button onclick="leaveCommunity('${c.id}', ${c.owner_id === currentUser.id})">${c.owner_id === currentUser.id ? "コミュニティを削除する" : "退会する"}</button>
   </div>
   <div class="card">
-    <b>ニュース・投稿</b>
-    <input id="cpTitle" class="input" placeholder="タイトル">
-    <textarea id="cpBody" class="input" rows="3" placeholder="本文"></textarea>
-    <button class="primary" onclick="postToCommunity('${c.id}')">投稿する</button>
+    <b>グループチャット</b>
+    <div id="communityChatBg" class="chatBg" style="margin-top:8px">読み込み中…</div>
+    <div class="chatInputBar">
+      <input type="file" accept="image/*" id="communityImageInput" class="hidden" onchange="sendCommunityImage('${c.id}', this.files[0])">
+      <button class="iconbtn" onclick="document.getElementById('communityImageInput').click()">📷</button>
+      <input id="communityChatInput" placeholder="メッセージを入力" onkeydown="if(event.key==='Enter'){sendCommunityMessage('${c.id}')}">
+      <button class="primary" style="border-radius:20px" onclick="sendCommunityMessage('${c.id}')">送信</button>
+    </div>
   </div>
-  <div class="card"><div id="communityPosts">読み込み中…</div></div>
   <div class="card"><b>メンバー</b><div id="communityMembers" style="margin-top:8px">読み込み中…</div></div>`;
 
   if(c.owner_id === currentUser.id && c.join_type === "approval"){
@@ -885,21 +890,62 @@ async function openCommunity(communityId){
     }
   }
 
-  const { data: posts } = await sb.from("community_posts").select("*").eq("community_id", c.id).order("created_at", { ascending: false });
-  const postAuthors = await fetchProfilesByIds((posts||[]).map(p => p.user_id));
-  document.getElementById("communityPosts").innerHTML = (posts && posts.length) ? posts.map(p => `<div class="post"><div class="row">${avatarHTML(postAuthors[p.user_id]||{}, 32)}<b>${esc(postAuthors[p.user_id]?.name)||"unknown"}</b><span class="small muted">${new Date(p.created_at).toLocaleString("ja-JP")}</span></div><h3>${esc(p.title)}</h3><p>${esc(p.body)}</p></div>`).join("") : `<p class="muted">まだ投稿がありません。</p>`;
+  await renderCommunityChat(c.id);
 
   const { data: members } = await sb.from("community_members").select("user_id").eq("community_id", c.id).eq("status", "member");
   const memberProfiles = await fetchProfilesByIds((members||[]).map(m => m.user_id));
   document.getElementById("communityMembers").innerHTML = (members && members.length) ? members.map(m => `<div class="row" style="margin:4px 0">${avatarHTML(memberProfiles[m.user_id]||{}, 28)}<span>${esc(memberProfiles[m.user_id]?.name)||"unknown"}</span>${m.user_id === c.owner_id ? '<span class="pill">管理人</span>' : ''}</div>`).join("") : `<p class="muted">メンバーがいません。</p>`;
 }
-async function postToCommunity(communityId){
-  const title = document.getElementById("cpTitle").value.trim();
-  const body = document.getElementById("cpBody").value.trim();
-  if(!title || !body){ alert("タイトルと本文を入力してください"); return; }
-  const { error } = await sb.from("community_posts").insert({ community_id: communityId, user_id: currentUser.id, title, body });
-  if(error){ alert("投稿に失敗しました：" + error.message); return; }
-  openCommunity(communityId);
+async function renderCommunityChat(communityId){
+  const { data: posts } = await sb.from("community_posts").select("*").eq("community_id", communityId).order("created_at", { ascending: true });
+  const authors = await fetchProfilesByIds((posts||[]).map(p => p.user_id));
+  const area = document.getElementById("communityChatBg");
+  if(!area) return;
+  area.innerHTML = (posts && posts.length) ? posts.map(p => {
+    const mine = p.user_id === currentUser.id;
+    const author = authors[p.user_id];
+    const time = new Date(p.created_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+    const bubbleContent = p.image_url
+      ? `<img src="${esc(p.image_url)}" alt="送信された写真" style="max-width:100%;border-radius:12px;display:block;cursor:pointer" onclick="openImageViewer('${esc(p.image_url)}')">`
+      : esc(p.body || p.title);
+    const bubblePad = p.image_url ? "padding:4px" : "";
+    const nameLabel = !mine ? `<div class="small muted" style="margin:0 0 2px 4px">${esc(author?.name)||"unknown"}</div>` : "";
+    return `<div class="bubbleRow ${mine ? "mine" : "theirs"}" style="flex-direction:column;align-items:${mine?"flex-end":"flex-start"}">
+      ${nameLabel}
+      <div style="display:flex;gap:6px;align-items:flex-end;${mine?"flex-direction:row-reverse":""}">
+        ${!mine ? avatarHTML(author||{}, 28) : ""}
+        <div class="bubble ${mine ? "mine" : "theirs"}" style="${bubblePad}">${bubbleContent}</div>
+        <div class="bubbleMeta">${time}</div>
+      </div>
+    </div>`;
+  }).join("") : `<p class="muted">まだメッセージがありません。最初のメッセージを送ってみましょう。</p>`;
+  area.scrollTop = area.scrollHeight;
+}
+async function sendCommunityMessage(communityId){
+  const box = document.getElementById("communityChatInput");
+  const text = box.value.trim();
+  if(!text) return;
+  box.value = "";
+  const { error } = await sb.from("community_posts").insert({ community_id: communityId, user_id: currentUser.id, title: "", body: text });
+  if(error){ alert("送信できませんでした：" + error.message); return; }
+  await renderCommunityChat(communityId);
+}
+async function sendCommunityImage(communityId, file){
+  if(!file) return;
+  const fileInput = document.getElementById("communityImageInput");
+  try{
+    const compressed = await compressImage(file, 400*1024);
+    if(!compressed){ alert("画像の処理に失敗しました。別の画像でお試しください。"); return; }
+    const path = `${communityId}/${currentUser.id}/${Date.now()}.jpg`;
+    const { error: upErr } = await sb.storage.from("community-images").upload(path, compressed, { contentType: "image/jpeg" });
+    if(upErr){ alert("画像のアップロードに失敗しました。"); return; }
+    const { data: pub } = sb.storage.from("community-images").getPublicUrl(path);
+    const { error } = await sb.from("community_posts").insert({ community_id: communityId, user_id: currentUser.id, title: "", body: "", image_url: pub.publicUrl });
+    if(error){ alert("画像を送信できませんでした：" + error.message); return; }
+    await renderCommunityChat(communityId);
+  } finally {
+    if(fileInput) fileInput.value = "";
+  }
 }
 async function approveMember(communityId, userId){
   await sb.from("community_members").update({ status: "member" }).eq("community_id", communityId).eq("user_id", userId);
@@ -923,6 +969,7 @@ async function leaveCommunity(communityId, isOwner){
 /* ---------- Messages ---------- */
 let messageListState = { keyword: "", sort: "new" };
 let currentChatPeerId = null;
+let currentCommunityId = null;
 async function messagePage(){
   currentChatPeerId = null;
   if(isGuest){ document.getElementById("main").innerHTML = `<div class="card"><h2>メッセージ</h2><p class="muted">メッセージ機能を使うにはログイン（会員登録）が必要です。</p><button class="primary" onclick="promptLogin()">ログイン／登録する</button></div>`; return; }
@@ -2002,6 +2049,12 @@ function setupRealtime(){
       showToast("新しい通知が届きました");
       if(isBrowserNotifyEnabled()){
         try{ new Notification("CONNECT", { body: payload.new.body || "新しい通知があります" }); }catch(e){}
+      }
+    })
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "community_posts" }, (payload) => {
+      const p = payload.new;
+      if(currentCommunityId && p.community_id === currentCommunityId){
+        renderCommunityChat(currentCommunityId);
       }
     })
     .subscribe();
