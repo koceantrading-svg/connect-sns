@@ -304,15 +304,18 @@ function promptLogin(){
     location.reload();
   }
 }
+let testPeriodActive = false;
 function canSendMessages(){
   if(!myProfile) return false;
   if(!myProfile.prefecture) return false;
+  if(testPeriodActive) return true;
   if(myProfile.subscribed) return true;
   return new Date(myProfile.trial_ends_at) >= new Date();
 }
 function sendBlockReason(){
   if(!myProfile) return "";
   if(!myProfile.prefecture) return "prefecture";
+  if(testPeriodActive) return "";
   if(myProfile.subscribed) return "";
   return new Date(myProfile.trial_ends_at) >= new Date() ? "" : "trial";
 }
@@ -331,8 +334,10 @@ function promptSubscribe(){
   }
 }
 
-document.getElementById("guestSwitch").onclick = () => {
+document.getElementById("guestSwitch").onclick = async () => {
   isGuest = true;
+  const { data: testActive } = await sb.rpc("is_test_period_active");
+  testPeriodActive = !!testActive;
   document.getElementById("authScreen").classList.add("hidden");
   document.getElementById("appRoot").classList.remove("hidden");
   renderGuestSidebar();
@@ -421,6 +426,8 @@ async function init(){
   currentUser = session.user;
   let { data: profile } = await sb.from("profiles").select("*").eq("id", currentUser.id).single();
   myProfile = profile;
+  const { data: testActive } = await sb.rpc("is_test_period_active");
+  testPeriodActive = !!testActive;
   if(myProfile?.suspended){
     await sb.auth.signOut();
     document.getElementById("authErr").textContent = "このアカウントは利用が停止されています。";
@@ -1544,7 +1551,13 @@ async function openModal(type, data){
     const trialNotice = (!subscribed && trialDaysLeft > 0)
       ? `<p class="small muted">今なら無料期間が残り${trialDaysLeft}日あります。今登録しても、無料期間が終わるまでは請求されません（無料期間終了後に自動で課金が始まります）。</p>`
       : "";
-    html = `<h2>会員プラン</h2><div class="card"><h3>最初の30日間：無料</h3><p>登録後30日間、基本機能を無料で利用できます。</p></div><div class="card"><h3>月額会員：1,980円</h3><p>検索、プロフィール、メッセージ等を継続利用。</p>${subscribed ? `${statusHtml}<button onclick="openStripePortal()">お支払い情報・解約の管理</button>` : `${trialNotice}<button class="primary" id="subscribeBtn" onclick="startCheckout()">有料会員に登録する</button>`}</div><div id="subscribeErr" class="err"></div>`;
+    const testNotice = testPeriodActive
+      ? `<div class="notice" style="background:#ecfdf5;color:#065f46"><b>現在テスト期間中につき、全ての機能を無料でご利用いただけます。</b><br>今のうちにご登録いただくと、テスト期間終了後も<b>月額料金がずっと90%OFF（198円）</b>になる早期登録特典があります。</div>`
+      : "";
+    const founderNotice = (!testPeriodActive && myProfile.founding_member)
+      ? `<div class="notice" style="background:#ecfdf5;color:#065f46"><b>早期登録特典が適用されています（月額198円・ずっと90%OFF）</b></div>`
+      : "";
+    html = `<h2>会員プラン</h2>${testNotice}${founderNotice}<div class="card"><h3>最初の30日間：無料</h3><p>登録後30日間、基本機能を無料で利用できます。</p></div><div class="card"><h3>月額会員：${myProfile.founding_member ? "198円（早期登録特典）" : "1,980円"}</h3><p>検索、プロフィール、メッセージ等を継続利用。</p>${subscribed ? `${statusHtml}<button onclick="openStripePortal()">お支払い情報・解約の管理</button>` : `${trialNotice}<button class="primary" id="subscribeBtn" onclick="startCheckout()">有料会員に登録する</button>`}</div><div id="subscribeErr" class="err"></div>`;
   }
   if(type==="message"){
     const { data: prof } = await sb.from("profiles_public").select("name").eq("id", data).single();
