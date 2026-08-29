@@ -340,6 +340,16 @@ async function loadTestPeriodInfo(){
     testPeriodEndLabel = fmt(end);
   }catch(e){}
 }
+const TEST_PERIOD_NOTIF_MARKER = "アーリーメンバー特典";
+async function maybeSendTestPeriodNotification(){
+  if(!testPeriodActive || !currentUser) return;
+  try{
+    const { data: existing } = await sb.from("notifications").select("id").eq("user_id", currentUser.id).ilike("body", `%${TEST_PERIOD_NOTIF_MARKER}%`).limit(1);
+    if(existing && existing.length) return;
+    const body = `🎉 ${TEST_PERIOD_NOTIF_MARKER}\n👥 先着1万人まで\n\n月額1,980円 → 月額198円（90%OFF・永年）\n\n今だけ、月額198円で利用できる特別メンバーを募集中！CONNECTでは正式スタートに向けて3ヶ月間のテスト期間を実施しています。\n\n📅 テスト期間：${testPeriodStartLabel} ～ ${testPeriodEndLabel}（登録者1万人到達で早期終了する場合があります）\n\n⭐ テスト期間中に登録された方は、月額料金が90%OFFの198円になる「${TEST_PERIOD_NOTIF_MARKER}」の対象です。この割引は永年適用されます。\n\n登録するなら今がお得です。`;
+    await sb.from("notifications").insert({ user_id: currentUser.id, body });
+  }catch(e){}
+}
 function canSendMessages(){
   if(!myProfile) return false;
   if(!myProfile.prefecture) return false;
@@ -481,6 +491,7 @@ async function init(){
   let { data: profile } = await sb.from("profiles").select("*").eq("id", currentUser.id).single();
   myProfile = profile;
   await loadTestPeriodInfo();
+  await maybeSendTestPeriodNotification();
   if(myProfile?.suspended){
     await sb.auth.signOut();
     document.getElementById("authErr").textContent = "このアカウントは利用が停止されています。";
@@ -1224,7 +1235,7 @@ async function notificationPage(){
   const { data: list, error } = await sb.from("notifications").select("*").eq("user_id", currentUser.id).order("created_at", { ascending: false });
   const el = document.getElementById("notifList");
   if(error){ el.innerHTML = `<p class="muted">読み込みに失敗しました。</p>`; return; }
-  el.innerHTML = list.length ? list.map(n => `<div class="post">${esc(n.body)}</div>`).join("") : `<p class="muted">新しい通知はありません。</p>`;
+  el.innerHTML = list.length ? list.map(n => `<div class="post">${esc(n.body).replace(/\n/g, "<br>")}</div>`).join("") : `<p class="muted">新しい通知はありません。</p>`;
   const unreadIds = list.filter(n=>!n.read).map(n=>n.id);
   if(unreadIds.length) await sb.from("notifications").update({ read: true }).in("id", unreadIds);
 }
