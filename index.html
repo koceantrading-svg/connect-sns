@@ -324,6 +324,22 @@ function promptLogin(){
   }
 }
 let testPeriodActive = false;
+let testPeriodStartLabel = "";
+let testPeriodEndLabel = "";
+async function loadTestPeriodInfo(){
+  try{
+    const { data } = await sb.rpc("get_test_period_info");
+    const info = Array.isArray(data) ? data[0] : data;
+    if(!info) return;
+    testPeriodActive = !!info.active;
+    const start = new Date(info.test_started_at);
+    const end = new Date(start);
+    end.setMonth(end.getMonth() + info.test_duration_months);
+    const fmt = (d) => `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+    testPeriodStartLabel = fmt(start);
+    testPeriodEndLabel = fmt(end);
+  }catch(e){}
+}
 function canSendMessages(){
   if(!myProfile) return false;
   if(!myProfile.prefecture) return false;
@@ -355,8 +371,7 @@ function promptSubscribe(){
 
 document.getElementById("guestSwitch").onclick = async () => {
   isGuest = true;
-  const { data: testActive } = await sb.rpc("is_test_period_active");
-  testPeriodActive = !!testActive;
+  await loadTestPeriodInfo();
   document.getElementById("authScreen").classList.add("hidden");
   document.getElementById("appRoot").classList.remove("hidden");
   renderGuestSidebar();
@@ -465,8 +480,7 @@ async function init(){
   currentUser = session.user;
   let { data: profile } = await sb.from("profiles").select("*").eq("id", currentUser.id).single();
   myProfile = profile;
-  const { data: testActive } = await sb.rpc("is_test_period_active");
-  testPeriodActive = !!testActive;
+  await loadTestPeriodInfo();
   if(myProfile?.suspended){
     await sb.auth.signOut();
     document.getElementById("authErr").textContent = "このアカウントは利用が停止されています。";
@@ -1591,7 +1605,23 @@ async function openModal(type, data){
       ? `<p class="small muted">今なら無料期間が残り${trialDaysLeft}日あります。今登録しても、無料期間が終わるまでは請求されません（無料期間終了後に自動で課金が始まります）。</p>`
       : "";
     const testNotice = testPeriodActive
-      ? `<div class="notice" style="background:#ecfdf5;color:#065f46"><b>現在テスト期間中につき、全ての機能を無料でご利用いただけます。</b><br>今、ご登録いただくと、テスト期間終了後も<b>月額料金がずっと90%OFF（198円）</b>になる早期登録特典があります。</div>`
+      ? `<div class="notice" style="background:#ecfdf5;color:#065f46;line-height:1.7">
+          <div style="text-align:center;margin-bottom:10px">
+            <div style="font-weight:800;font-size:16px">🎉 アーリーメンバー特典</div>
+            <div class="small" style="margin-top:2px">👥 先着1万人まで</div>
+            <div style="margin-top:8px">
+              <span style="text-decoration:line-through;color:#6b7280">月額1,980円</span><br>
+              ↓<br>
+              <span style="font-size:24px;font-weight:800">月額198円</span><br>
+              <span class="pill" style="background:#dcfce7;color:#166534;font-weight:700;margin-top:4px">90%OFF・永年</span>
+            </div>
+          </div>
+          <p style="margin:10px 0"><b>今だけ、月額198円で利用できる特別メンバーを募集中！</b><br>CONNECTでは、正式スタートに向けて3ヶ月間のテスト期間を実施しています。</p>
+          <p style="margin:10px 0">📅 <b>テスト期間</b><br>${testPeriodStartLabel} ～ ${testPeriodEndLabel}<br>ただし、登録者数が1万人に達した時点でテスト期間は終了します。</p>
+          <p style="margin:10px 0">⭐ <b>テスト期間中に登録した方は特別待遇！</b><br>テスト期間中に登録された方は、月額料金が90％OFFの198円になる「アーリーメンバー特典」の対象です。さらに、この90％OFFの権利は<b>永年適用</b>されます。</p>
+          <p style="margin:10px 0;font-weight:700">登録するなら今がお得です。<br>⏰ 期間終了 または 👥 登録者1万人到達、どちらか早い方で特典の新規受付を終了します。</p>
+          <p class="small" style="margin:10px 0 0">※テスト期間中に登録された方は、登録時点でアーリーメンバー特典の対象となります。</p>
+        </div>`
       : "";
     const founderNotice = (!testPeriodActive && myProfile.founding_member)
       ? `<div class="notice" style="background:#ecfdf5;color:#065f46"><b>早期登録特典が適用されています（月額198円・ずっと90%OFF）</b></div>`
