@@ -1591,7 +1591,7 @@ async function openModal(type, data){
       ? `<p class="small muted">今なら無料期間が残り${trialDaysLeft}日あります。今登録しても、無料期間が終わるまでは請求されません（無料期間終了後に自動で課金が始まります）。</p>`
       : "";
     const testNotice = testPeriodActive
-      ? `<div class="notice" style="background:#ecfdf5;color:#065f46"><b>現在テスト期間中につき、全ての機能を無料でご利用いただけます。</b><br>今のうちにご登録いただくと、テスト期間終了後も<b>月額料金がずっと90%OFF（198円）</b>になる早期登録特典があります。</div>`
+      ? `<div class="notice" style="background:#ecfdf5;color:#065f46"><b>現在テスト期間中につき、全ての機能を無料でご利用いただけます。</b><br>今、ご登録いただくと、テスト期間終了後も<b>月額料金がずっと90%OFF（198円）</b>になる早期登録特典があります。</div>`
       : "";
     const founderNotice = (!testPeriodActive && myProfile.founding_member)
       ? `<div class="notice" style="background:#ecfdf5;color:#065f46"><b>早期登録特典が適用されています（月額198円・ずっと90%OFF）</b></div>`
