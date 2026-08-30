@@ -1637,7 +1637,7 @@ async function openModal(type, data){
     const founderNotice = (!testPeriodActive && myProfile.founding_member)
       ? `<div class="notice" style="background:#ecfdf5;color:#065f46"><b>早期登録特典が適用されています（月額198円・ずっと90%OFF）</b></div>`
       : "";
-    html = `<h2>会員プラン</h2>${testNotice}${founderNotice}<div class="card"><h3>最初の30日間：無料</h3><p>登録後30日間、基本機能を無料で利用できます。</p></div><div class="card"><h3>月額会員：${myProfile.founding_member ? "198円（早期登録特典）" : "1,980円"}</h3><p>検索、プロフィール、メッセージ等を継続利用。</p>${subscribed ? `${statusHtml}<button onclick="openStripePortal()">お支払い情報・解約の管理</button>` : `${trialNotice}<button class="primary" id="subscribeBtn" onclick="startCheckout()">有料会員に登録する</button>`}</div><div id="subscribeErr" class="err"></div>`;
+    html = `<div class="row between" style="position:sticky;top:0;background:white;padding-bottom:8px;margin-bottom:4px;z-index:1"><h2 style="margin:0">会員プラン</h2><button onclick="closeModal()">閉じる</button></div>${testNotice}${founderNotice}<div class="card"><h3>最初の30日間：無料</h3><p>登録後30日間、基本機能を無料で利用できます。</p></div><div class="card"><h3>月額会員：${myProfile.founding_member ? "198円（早期登録特典）" : "1,980円"}</h3><p>検索、プロフィール、メッセージ等を継続利用。</p>${subscribed ? `${statusHtml}<button onclick="openStripePortal()">お支払い情報・解約の管理</button>` : `${trialNotice}<button class="primary" id="subscribeBtn" onclick="startCheckout()">有料会員に登録する</button>`}</div><div id="subscribeErr" class="err"></div>`;
   }
   if(type==="message"){
     const { data: prof } = await sb.from("profiles_public").select("name").eq("id", data).single();
