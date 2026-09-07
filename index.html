@@ -697,6 +697,8 @@ function refreshSidebar(){
 
 /* ---------- Navigation ---------- */
 function showPage(p){
+  if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  window.scrollTo(0, 0);
   document.querySelectorAll("#tabbar button").forEach(b=>b.classList.toggle("active", b.dataset.page===p));
   if(location.hash !== "#" + p) history.replaceState(null, "", "#" + p);
   if(p==="home")home(); if(p==="discover")discover();
@@ -948,6 +950,8 @@ async function createCommunitySubmit(){
   communitiesPage();
 }
 async function openCommunity(communityId){
+  if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  window.scrollTo(0, 0);
   const { data: c } = await sb.from("communities").select("*").eq("id", communityId).single();
   if(!c){ return; }
   currentCommunityId = communityId;
@@ -1122,6 +1126,8 @@ async function messagePage(){
   el.innerHTML += `<div style="margin:0 -16px -16px">${listHtml}</div>`;
 }
 async function openChatThread(otherId){
+  if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  window.scrollTo(0, 0);
   currentChatPeerId = otherId;
   const { data: prof } = await sb.from("profiles_public").select("name,avatar_url,is_verified").eq("id", otherId).single();
   document.getElementById("main").innerHTML = `<div class="card" style="padding:0;overflow:hidden;display:flex;flex-direction:column;min-width:0;max-height:calc(100dvh - 160px)">
